@@ -1,8 +1,34 @@
 import Database from "better-sqlite3";
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 
-const DB_FILE = join(process.cwd(), "data", "business-guardian.sqlite");
+function loadLocalEnv() {
+  const envPath = join(process.cwd(), ".env.local");
+  if (!existsSync(envPath)) return;
+
+  const lines = readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#") || !trimmed.includes("=")) continue;
+
+    const [key, ...valueParts] = trimmed.split("=");
+    if (!key || process.env[key]) continue;
+
+    process.env[key] = valueParts.join("=").replace(/^["']|["']$/g, "");
+  }
+}
+
+function getSqliteFilePath() {
+  loadLocalEnv();
+  const databaseUrl = process.env.DATABASE_URL?.trim() || "./data/business-guardian.sqlite";
+  const filePath = databaseUrl.startsWith("file:")
+    ? databaseUrl.replace(/^file:/, "")
+    : databaseUrl;
+
+  return isAbsolute(filePath) ? filePath : join(process.cwd(), filePath);
+}
+
+const DB_FILE = getSqliteFilePath();
 const DEMO_USER_ID = "demo-user";
 const SEED_PREFIX = "seed-telemetry";
 

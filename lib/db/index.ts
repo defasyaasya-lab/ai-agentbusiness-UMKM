@@ -2,11 +2,12 @@ import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { eq } from "drizzle-orm";
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
+import { getSqliteFilePath } from "@/lib/db/database-path";
 import * as schema from "@/lib/db/schema";
 
 export const DEMO_USER_ID = "demo-user";
-const DB_FILE = join(process.cwd(), "data", "business-guardian.sqlite");
+const DB_FILE = getSqliteFilePath();
 
 type DbGlobal = typeof globalThis & {
   businessGuardianSqlite?: Database.Database;
