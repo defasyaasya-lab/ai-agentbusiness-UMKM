@@ -1,0 +1,9 @@
+node_modules
+.next
+out
+dist
+.env*
+!.env.local.example
+*.log
+data/*.sqlite
+data/*.sqlite-*
