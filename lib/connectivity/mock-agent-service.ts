@@ -1,9 +1,8 @@
-import { createSeedConnectivityStatus } from "@/lib/connectivity/mock-status";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import {
+  getConnectivityState,
   getRecentNetworkLogs,
   insertNetworkLog,
+  upsertConnectivityState,
 } from "@/lib/db/connectivity-repository";
 import type {
   ActiveRoute,
@@ -16,13 +15,7 @@ import type {
   SwitchEventUpdate,
 } from "@/lib/connectivity/types";
 
-const CONNECTIVITY_STORE_KEY = Symbol.for("businessGuardian.connectivityStatus");
-const STORE_FILE = join(process.cwd(), ".next", "connectivity-state.json");
 const RISK_STATUSES: ConnectionStatus[] = ["degraded", "offline", "switching"];
-
-type ConnectivityGlobal = typeof globalThis & {
-  [CONNECTIVITY_STORE_KEY]?: ConnectivityStatus;
-};
 
 function cloneStatus(status: ConnectivityStatus): ConnectivityStatus {
   return {
@@ -43,25 +36,6 @@ function logState(message: string, status: ConnectivityStatus) {
   console.log(
     `[connectivity] ${message}: connectionStatus=${status.connectionStatus} riskState=${status.riskState} speedMbps=${status.speedMbps} activeRoute=${status.activeRoute} updatedAt=${status.updatedAt}`,
   );
-}
-
-function readDiskState(): ConnectivityStatus | undefined {
-  try {
-    if (!existsSync(STORE_FILE)) return undefined;
-    return JSON.parse(readFileSync(STORE_FILE, "utf8")) as ConnectivityStatus;
-  } catch (error) {
-    console.error("[connectivity] failed to read disk state", error);
-    return undefined;
-  }
-}
-
-function writeDiskState(status: ConnectivityStatus) {
-  try {
-    mkdirSync(dirname(STORE_FILE), { recursive: true });
-    writeFileSync(STORE_FILE, JSON.stringify(status), "utf8");
-  } catch (error) {
-    console.error("[connectivity] failed to write disk state", error);
-  }
 }
 
 function emptyRiskInsight(now = new Date().toISOString()): RiskPatternInsight {
@@ -111,9 +85,9 @@ function hourRangeLabel(hour: number) {
   return `${String(hour).padStart(2, "0")}.00-${String(nextHour).padStart(2, "0")}.00`;
 }
 
-function analyzeRiskPattern(): RiskPatternInsight {
+async function analyzeRiskPattern(): Promise<RiskPatternInsight> {
   const now = new Date().toISOString();
-  const history = getRecentNetworkLogs();
+  const history = await getRecentNetworkLogs();
   const riskEntries = history.filter((entry) =>
     RISK_STATUSES.includes(entry.connectionStatus),
   );
@@ -152,31 +126,14 @@ function analyzeRiskPattern(): RiskPatternInsight {
   };
 }
 
-function getStore(): ConnectivityStatus {
-  const storeHost = globalThis as ConnectivityGlobal;
-
-  if (!storeHost[CONNECTIVITY_STORE_KEY]) {
-    storeHost[CONNECTIVITY_STORE_KEY] = ensureStatusShape(
-      readDiskState() ?? createSeedConnectivityStatus(),
-    );
-    writeDiskState(storeHost[CONNECTIVITY_STORE_KEY]);
-    logState("seeded shared in-memory state", storeHost[CONNECTIVITY_STORE_KEY]);
-  }
-
-  return storeHost[CONNECTIVITY_STORE_KEY];
+async function getStore(): Promise<ConnectivityStatus> {
+  return ensureStatusShape(await getConnectivityState());
 }
 
-export function getConnectivityStatus(): ConnectivityStatus {
-  const current = getStore();
-  const diskStatus = readDiskState();
-
-  if (diskStatus && diskStatus.updatedAt !== current.updatedAt) {
-    Object.assign(current, ensureStatusShape(diskStatus));
-    logState("refreshed shared state from disk", current);
-  }
-
-  current.riskInsight = analyzeRiskPattern();
-  writeDiskState(current);
+export async function getConnectivityStatus(): Promise<ConnectivityStatus> {
+  const current = await getStore();
+  current.riskInsight = await analyzeRiskPattern();
+  await upsertConnectivityState(current);
 
   const status = cloneStatus(current);
   logState("GET current state", status);
@@ -266,8 +223,10 @@ function cleanConnectivityUpdate(
   return cleaned;
 }
 
-export function updateConnectivityStatus(update: AgentStatusAliasPayload): ConnectivityStatus {
-  const current = getStore();
+export async function updateConnectivityStatus(
+  update: AgentStatusAliasPayload,
+): Promise<ConnectivityStatus> {
+  const current = await getStore();
   const now = new Date().toISOString();
   const normalizedUpdate = cleanConnectivityUpdate(normalizeConnectivityUpdate(update));
   const latestSwitchEvent = normalizedUpdate.latestSwitchEvent
@@ -301,35 +260,41 @@ export function updateConnectivityStatus(update: AgentStatusAliasPayload): Conne
     updatedAt: now,
   };
 
-  Object.assign(current, nextState);
-  insertNetworkLog(current);
-  current.riskInsight = analyzeRiskPattern();
-  writeDiskState(current);
+  await insertNetworkLog(nextState);
+  nextState.riskInsight = await analyzeRiskPattern();
+  await upsertConnectivityState(nextState);
 
-  logState("POST merged shared state", current);
-  return cloneStatus(current);
+  logState("POST merged shared state", nextState);
+  return cloneStatus(nextState);
 }
 
 function statusFromSwitchEvent(
   result: SwitchEvent["result"],
   routeAfter: ActiveRoute,
+  fallbackStatus: ConnectionStatus,
 ): ConnectionStatus {
   if (result === "switch_started") return "switching";
   if (result === "switch_success") return routeAfter === "backup" ? "backup" : "online";
   if (result === "switch_failed") return "degraded";
   if (result === "prepared_backup") return "degraded";
-  return getStore().connectionStatus;
+  return fallbackStatus;
 }
 
-export function recordSwitchEvent(update: SwitchEventUpdate): ConnectivityStatus {
-  const current = getStore();
+export async function recordSwitchEvent(
+  update: SwitchEventUpdate,
+): Promise<ConnectivityStatus> {
+  const current = await getStore();
   const now = new Date().toISOString();
   const activeRouteAfter = update.activeRouteAfter ?? current.activeRoute;
   const result = update.result ?? current.latestSwitchEvent.result;
 
   return updateConnectivityStatus({
     activeRoute: activeRouteAfter,
-    connectionStatus: statusFromSwitchEvent(result, activeRouteAfter),
+    connectionStatus: statusFromSwitchEvent(
+      result,
+      activeRouteAfter,
+      current.connectionStatus,
+    ),
     primaryConnection: {
       status: activeRouteAfter === "primary" ? "degraded" : "degraded",
     },

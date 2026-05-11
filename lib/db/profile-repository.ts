@@ -17,12 +17,43 @@ function toStoreProfile(row: typeof users.$inferSelect): StoreProfile {
   };
 }
 
-export function getDemoStoreProfile(): StoreProfile {
-  const row = getDb()
+export async function ensureDemoUser() {
+  const existingUser = await getDb()
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.id, DEMO_USER_ID))
+    .limit(1);
+
+  if (existingUser[0]) return;
+
+  const now = new Date().toISOString();
+  await getDb()
+    .insert(users)
+    .values({
+      id: DEMO_USER_ID,
+      storeName: "Toko Sinar Rasa",
+      ownerName: "Pemilik Toko",
+      telegramChatId: process.env.TELEGRAM_CHAT_ID ?? "demo-telegram-chat",
+      estimatedDailyRevenue: 8500000,
+      primaryWifiName: "WiFi Utama Toko",
+      backupWifiName: "Hotspot HP Cadangan",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoNothing({ target: users.id });
+
+  console.log("[db] seeded default demo user");
+}
+
+export async function getDemoStoreProfile(): Promise<StoreProfile> {
+  await ensureDemoUser();
+
+  const rows = await getDb()
     .select()
     .from(users)
     .where(eq(users.id, DEMO_USER_ID))
-    .get();
+    .limit(1);
+  const row = rows[0];
 
   if (!row) {
     throw new Error("Demo user profile was not seeded.");
@@ -31,8 +62,10 @@ export function getDemoStoreProfile(): StoreProfile {
   return toStoreProfile(row);
 }
 
-export function updateDemoStoreProfile(update: StoreProfileUpdate): StoreProfile {
-  const current = getDemoStoreProfile();
+export async function updateDemoStoreProfile(
+  update: StoreProfileUpdate,
+): Promise<StoreProfile> {
+  const current = await getDemoStoreProfile();
   const cleanedUpdate: StoreProfileUpdate = {};
 
   if (typeof update.storeName === "string" && update.storeName.trim()) {
@@ -65,7 +98,7 @@ export function updateDemoStoreProfile(update: StoreProfileUpdate): StoreProfile
     cleanedUpdate.backupWifiName = update.backupWifiName.trim();
   }
 
-  getDb()
+  await getDb()
     .update(users)
     .set({
       storeName: cleanedUpdate.storeName ?? current.storeName,
@@ -77,10 +110,9 @@ export function updateDemoStoreProfile(update: StoreProfileUpdate): StoreProfile
       backupWifiName: cleanedUpdate.backupWifiName ?? current.backupWifiName,
       updatedAt: new Date().toISOString(),
     })
-    .where(eq(users.id, DEMO_USER_ID))
-    .run();
+    .where(eq(users.id, DEMO_USER_ID));
 
-  const profile = getDemoStoreProfile();
+  const profile = await getDemoStoreProfile();
   console.log(
     `[profile] updated demo profile: storeName=${profile.storeName} estimatedDailyRevenue=${profile.estimatedDailyRevenue}`,
   );

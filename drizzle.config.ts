@@ -1,6 +1,6 @@
 import { defineConfig } from "drizzle-kit";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 
 function loadLocalEnv() {
   const envPath = join(process.cwd(), ".env.local");
@@ -18,20 +18,25 @@ function loadLocalEnv() {
   }
 }
 
-function getDatabaseUrl() {
-  loadLocalEnv();
-  const databaseUrl = process.env.DATABASE_URL?.trim() || "./data/business-guardian.sqlite";
-  const filePath = databaseUrl.startsWith("file:")
-    ? databaseUrl.replace(/^file:/, "")
-    : databaseUrl;
+loadLocalEnv();
 
-  return isAbsolute(filePath) ? filePath : join(process.cwd(), filePath);
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    "DATABASE_URL is required for Drizzle. Set it to your Supabase/PostgreSQL connection string.",
+  );
+}
+
+if (!/^postgres(ql)?:\/\//.test(process.env.DATABASE_URL)) {
+  throw new Error(
+    "DATABASE_URL must be a PostgreSQL connection string, for example postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require.",
+  );
 }
 
 export default defineConfig({
   schema: "./lib/db/schema.ts",
-  dialect: "sqlite",
+  out: "./drizzle",
+  dialect: "postgresql",
   dbCredentials: {
-    url: getDatabaseUrl(),
+    url: process.env.DATABASE_URL,
   },
 });

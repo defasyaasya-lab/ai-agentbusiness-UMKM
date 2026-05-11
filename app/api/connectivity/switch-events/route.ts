@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   try {
     const update = (await request.json()) as SwitchEventUpdate;
     console.log("[connectivity:route] POST /api/connectivity/switch-events", update);
-    const state = recordSwitchEvent(update);
+    const state = await recordSwitchEvent(update);
     console.log("[connectivity:route] switch event updated shared state", state);
     return NextResponse.json(state, {
       headers: {

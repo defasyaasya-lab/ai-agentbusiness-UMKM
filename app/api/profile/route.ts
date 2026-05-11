@@ -9,8 +9,8 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-export function GET() {
-  const profile = getDemoStoreProfile();
+export async function GET() {
+  const profile = await getDemoStoreProfile();
   return NextResponse.json(profile, {
     headers: {
       "Cache-Control": "no-store, no-cache, must-revalidate",
@@ -21,7 +21,7 @@ export function GET() {
 export async function PUT(request: Request) {
   try {
     const update = (await request.json()) as StoreProfileUpdate;
-    const profile = updateDemoStoreProfile(update);
+    const profile = await updateDemoStoreProfile(update);
 
     return NextResponse.json(profile, {
       headers: {

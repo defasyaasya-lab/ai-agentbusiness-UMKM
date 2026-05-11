@@ -9,9 +9,9 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const revalidate = 0;
 
-export function GET() {
+export async function GET() {
   console.log("[connectivity:route] GET /api/connectivity/status");
-  const state = getConnectivityStatus();
+  const state = await getConnectivityStatus();
   console.log("[connectivity:route] GET returning shared state", state);
   return NextResponse.json(state, {
     headers: {
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   try {
     const update = (await request.json()) as ConnectivityStatusUpdate;
     console.log("[connectivity:route] POST /api/connectivity/status", update);
-    const state = updateConnectivityStatus(update);
+    const state = await updateConnectivityStatus(update);
     console.log("[connectivity:route] POST updated shared state", state);
     return NextResponse.json(state, {
       headers: {
