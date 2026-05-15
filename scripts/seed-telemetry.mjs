@@ -37,7 +37,13 @@ function getDatabaseUrl() {
     );
   }
 
-  return databaseUrl;
+  const url = new URL(databaseUrl);
+  const sslMode = url.searchParams.get("sslmode");
+  if (sslMode === "require" || sslMode === "prefer" || sslMode === "verify-ca") {
+    url.searchParams.set("sslmode", "no-verify");
+  }
+
+  return url.toString();
 }
 
 function jakartaDateParts(date = new Date()) {
@@ -220,7 +226,6 @@ function buildSeedConnectivityState(timestamp) {
 const databaseUrl = getDatabaseUrl();
 const pool = new Pool({
   connectionString: databaseUrl,
-  ssl: databaseUrl.includes("sslmode=require") ? { rejectUnauthorized: false } : undefined,
 });
 
 const logs = buildLogs();
@@ -316,15 +321,15 @@ try {
       DEMO_USER_ID,
       seedState.connectionStatus,
       seedState.activeRoute,
-      seedState.primaryConnection,
-      seedState.backupConnection,
+      JSON.stringify(seedState.primaryConnection),
+      JSON.stringify(seedState.backupConnection),
       seedState.speedMbps,
       seedState.latencyMs,
       seedState.riskState,
-      seedState.businessImpact,
-      seedState.chartValues,
-      seedState.latestSwitchEvent,
-      seedState.riskInsight,
+      JSON.stringify(seedState.businessImpact),
+      JSON.stringify(seedState.chartValues),
+      JSON.stringify(seedState.latestSwitchEvent),
+      JSON.stringify(seedState.riskInsight),
       seedState.updatedAt,
     ],
   );

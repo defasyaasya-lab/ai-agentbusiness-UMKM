@@ -32,11 +32,22 @@ if (!/^postgres(ql)?:\/\//.test(process.env.DATABASE_URL)) {
   );
 }
 
+function normalizePostgresUrl(databaseUrl: string) {
+  const url = new URL(databaseUrl);
+  const sslMode = url.searchParams.get("sslmode");
+
+  if (sslMode === "require" || sslMode === "prefer" || sslMode === "verify-ca") {
+    url.searchParams.set("sslmode", "no-verify");
+  }
+
+  return url.toString();
+}
+
 export default defineConfig({
   schema: "./lib/db/schema.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL,
+    url: normalizePostgresUrl(process.env.DATABASE_URL),
   },
 });

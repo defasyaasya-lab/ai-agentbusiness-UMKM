@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
+import { normalizePostgresUrl } from "@/lib/db/postgres-url";
 import * as schema from "@/lib/db/schema";
 
 export const DEMO_USER_ID = "demo-user";
@@ -24,7 +25,7 @@ function getDatabaseUrl() {
     );
   }
 
-  return databaseUrl;
+  return normalizePostgresUrl(databaseUrl);
 }
 
 export function getDb() {
@@ -33,9 +34,6 @@ export function getDb() {
   if (!dbGlobal.businessGuardianPgPool) {
     dbGlobal.businessGuardianPgPool = new Pool({
       connectionString: getDatabaseUrl(),
-      ssl: getDatabaseUrl().includes("sslmode=require")
-        ? { rejectUnauthorized: false }
-        : undefined,
     });
     dbGlobal.businessGuardianDb = drizzle(dbGlobal.businessGuardianPgPool, { schema });
   }
